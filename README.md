@@ -16,38 +16,26 @@ Two scripts + a cron job:
 
 ## How it works
 
-```
-┌─────────────────────────┐
-│  One-time setup (local)  │
-│  gws_oauth_setup.py      │
-│                           │
-│  Browser login ──────────►  MCP Server /register + /authorize + /token
-│            │                        │
-│            ▼                        │
-│  Vault credential created           │
-│  - auth.access_token               │
-│  - metadata.client_id              │
-│  - metadata.client_secret          │
-│  - metadata.rt_0, rt_1, rt_2      │  (refresh token split across keys)
-└─────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph setup["One-time setup (local)"]
+        A[gws_oauth_setup.py] -->|Browser login| B[MCP Server<br>/register + /authorize + /token]
+        B --> C[Vault credential created<br>auth.access_token<br>metadata: client_id, client_secret<br>metadata: rt_0, rt_1, rt_2]
+    end
 
-┌─────────────────────────┐
-│  Cron (Pipedream)        │        ┌──────────────┐
-│  refresh_mcp_token.py    │        │ MCP Server   │
-│  every 50 min            │        │  /token      │
-│                           │        └──────┬───────┘
-│  Read vault metadata ────►  refresh_token ─►  fresh access_token
-│  Write back to vault  ◄──  + rotated refresh_token
-└─────────────────────────┘
+    subgraph cron["Cron — Pipedream, every 50 min"]
+        D[refresh_mcp_token.py] -->|Read vault metadata| E[Reassemble refresh_token]
+        E -->|grant_type=refresh_token| F[MCP Server /token]
+        F -->|fresh access_token + rotated refresh_token| G[Write back to vault]
+    end
 
-┌─────────────────────────┐
-│  Agent session            │
-│  (Anthropic Managed)      │
-│                           │
-│  vault_ids=[vault_id] ───►  Platform matches mcp_server_url
-│                           │  → uses fresh access_token
-│  MCP tool calls work ✅   │
-└─────────────────────────┘
+    subgraph agent["Agent session (Anthropic Managed)"]
+        H[sessions.create<br>vault_ids] -->|Platform matches mcp_server_url| I[Uses fresh access_token]
+        I --> J[MCP tool calls work]
+    end
+
+    setup --> cron
+    cron --> agent
 ```
 
 ## Setup
